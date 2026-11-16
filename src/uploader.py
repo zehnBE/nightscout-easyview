@@ -1160,6 +1160,20 @@ class NightScout:
             logger.warning("Failed to update pump status: %s", e)
 
 
+def detect_account_type(username: str, password: str) -> str:
+    """Follow-Konto (hat Verbindungen) oder eigenes Konto (keine Verbindungen) erkennen."""
+    probe = EasyFollow(username, password)
+    try:
+        probe.open()
+        status = probe.get_status()
+        items = ((status or {}).get("data") or {}).get("items") or []
+    finally:
+        probe.session.close()
+    detected = "follow" if items else "cgm"
+    logger.info("account_type erkannt: %s (%d Verbindung(en))", detected, len(items))
+    return detected
+
+
 def create_easyview_client(
     username: str,
     password: str,
@@ -1178,6 +1192,11 @@ def create_easyview_client(
     Returns:
         EasyFollow or EasyCGM instance
     """
+    if account_type.lower() in ("auto", "follow"):
+        detected = detect_account_type(username, password)
+        if account_type.lower() == "follow" and detected != "follow":
+            logger.warning("account_type=follow gesetzt, aber keine Verbindungen - nutze cgm (eigenes Konto)")
+        account_type = detected
     if account_type.lower() == "cgm":
         return EasyCGM(username, password, timestamp)
     elif account_type.lower() == "follow":
@@ -1199,7 +1218,7 @@ def main():
     password = os.getenv("password")
     ns_url = os.getenv("url")
     api_secret = os.getenv("secret")
-    account_type = os.getenv("account_type", "follow")
+    account_type = os.getenv("account_type", "auto")
     sync_treatments = os.getenv("sync_treatments", "true").lower() == "true"
     sync_pump_status = os.getenv("sync_pump_status", "true").lower() == "true"
 
