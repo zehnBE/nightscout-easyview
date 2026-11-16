@@ -17,9 +17,12 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Proxy nur fuer die Medtrum-EasyView-Anfragen (wie GLOBAL_AGENT_HTTPS_PROXY bei nightscout-connect).
+# Proxy nur fuer die Medtrum-EasyView-Anfragen (HTTPS_PROXY/HTTP_PROXY wie im Installer).
 # Nightscout wird immer direkt angesprochen.
-PROXY_ENV_VARS = ("MEDTRUM_PROXY", "GLOBAL_AGENT_HTTPS_PROXY")
+PROXY_ENV_VARS = (
+    "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
+    "MEDTRUM_PROXY", "GLOBAL_AGENT_HTTPS_PROXY",
+)
 
 
 def get_proxy_url() -> str | None:
