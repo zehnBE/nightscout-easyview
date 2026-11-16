@@ -19,6 +19,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+NO_SENSOR_RETRY = 300   # Sekunden bis zur naechsten Pruefung, wenn kein Sensor aktiv ist
+CRASH_DELAY = 300       # Sekunden Wartezeit nach einem Absturz (Docker startet danach neu)
+
 # Proxy nur fuer die Medtrum-EasyView-Anfragen (HTTPS_PROXY/HTTP_PROXY wie im Installer).
 # Nightscout wird immer direkt angesprochen.
 PROXY_ENV_VARS = (
@@ -120,6 +123,9 @@ class SensorStatus:
     @classmethod
     def from_easyview(cls, data: dict[str, Any]) -> SensorStatus:
         """Create a SensorStatus from EasyView sensor_status dictionary."""
+        if not data or "status" not in data or "glucose" not in data:
+            logger.warning("kein aktiver Sensor im EasyView-Konto (sensor_status leer)")
+            return None
         try:
             status = cls.Status(data["status"])
         except ValueError:
@@ -599,8 +605,10 @@ class EasyViewBase(ABC):
         """Return the last retrieved sensor status."""
         if self._sensor_status is None:
             current_status = self._get_initial_status()
-            if current_status is None:
-                raise ValueError("No active sensor found")
+            while current_status is None:
+                logger.warning("kein aktiver Sensor - neuer Versuch in %i s", NO_SENSOR_RETRY)
+                time.sleep(NO_SENSOR_RETRY)
+                current_status = self._get_initial_status()
 
             if self.resume_timestamp is None:
                 self._sensor_status = SensorStatus.from_timestamp(
@@ -1165,8 +1173,10 @@ def detect_account_type(username: str, password: str) -> str:
     probe = EasyFollow(username, password)
     try:
         probe.open()
-        status = probe.get_status()
-        items = ((status or {}).get("data") or {}).get("items") or []
+        status = probe.get_status() or {}
+        if status.get("error") not in (0, 14):
+            raise ConnectionError(f"EasyView-Login fehlgeschlagen: {status}")
+        items = (status.get("data") or {}).get("items") or []
     finally:
         probe.session.close()
     detected = "follow" if items else "cgm"
@@ -1243,4 +1253,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logger.exception("Abbruch - warte %i s vor dem Neustart (schont den Medtrum-Login)", CRASH_DELAY)
+        time.sleep(CRASH_DELAY)
+        raise
