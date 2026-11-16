@@ -178,25 +178,25 @@ class PumpStatus:
     pump_id: int
     serial: int
     device_type: int
-    
+
     # Bolus data
     bolus_deliveried: float
     bolus_deliveried_time: float
     bolus_type: int
     last_bolus_type: int
-    
+
     # Basal data
     basal_deliveried: float
     basal_deliveried_time: float
     basal_rate: float
     basal_type: int
     basal_percent: float
-    
+
     # Extended bolus
     extend_bolus_deliveried: float
     extend_bolus_duration: int
     extend_bolus_set: float
-    
+
     # Status
     iob: float
     remaining_dose: float
@@ -204,17 +204,17 @@ class PumpStatus:
     running_mins: int
     state: int
     status: int
-    
+
     # Auto mode
     auto_mode_enabled: bool
     auto_mode_sg_target: int
     bg_target: int
-    
+
     # Exercise
     exercise_status: int
     exercise_duration: int
     exercise_remain_time: int
-    
+
     app_name: str | None = None
 
     @property
@@ -282,7 +282,7 @@ class Treatment:
     value: float
     notes: str = ""
     record_id: str = ""
-    
+
     class TreatmentType(Enum):
         """Treatment types from EasyView."""
         BOLUS = "bolus"
@@ -318,7 +318,7 @@ class Treatment:
             "date": self.unix_timestamp * 1000,
             "enteredBy": "EasyView/Medtrum",
         }
-        
+
         if self.treatment_type == self.TreatmentType.BOLUS:
             base.update({
                 "eventType": "Bolus",
@@ -360,10 +360,10 @@ class Treatment:
                 "eventType": "Note",
                 "notes": f"Unknown treatment: {self.value}",
             })
-        
+
         if self.notes and self.treatment_type != self.TreatmentType.NOTE:
             base["notes"] = self.notes
-            
+
         return base
 
     @classmethod
@@ -433,7 +433,7 @@ class Treatment:
         """Create a Treatment from EasyView download tuple record."""
         if len(record) < 3:
             raise ValueError("Invalid download record format")
-        
+
         type_mapping = {
             "bo": cls.TreatmentType.BOLUS,
             "bolus": cls.TreatmentType.BOLUS,
@@ -441,9 +441,9 @@ class Treatment:
             "carbs": cls.TreatmentType.CARBS,
             "food": cls.TreatmentType.CARBS,
         }
-        
+
         treatment_type = type_mapping.get(record_type.lower(), cls.TreatmentType.UNKNOWN)
-        
+
         return cls(
             timestamp=float(record[1]),
             treatment_type=treatment_type,
@@ -476,7 +476,7 @@ def with_retry(delay: int):
 class EasyViewBase(ABC):
     """Abstract base class for EasyView API interaction."""
 
-    BASE_URL = "https://easyview.medtrum.eu/mobile/ajax"
+    BASE_URL = "https://easyview.medtrum.eu/v3/api/v2.0"
 
     _sensor_status: SensorStatus | None = None
     _pump_status: PumpStatus | None = None
@@ -519,13 +519,13 @@ class EasyViewBase(ABC):
             if delta > 0:
                 time.sleep(delta)
             self._next_interval = datetime.now(timezone.utc) + timedelta(seconds=30)
-            
+
             new_stat = self._fetch_current_status()
             if new_stat is None:
                 continue
-                
+
             if new_stat.key == cur_stat.key:
-                logger.debug(
+                logger.info(
                     "no new data on EasyView (sensor=%i, sequence=%i)",
                     cur_stat.sensor_id,
                     cur_stat.sequence,
@@ -551,7 +551,7 @@ class EasyViewBase(ABC):
         )
         response.raise_for_status()
         answer = response.json()
-        logger.debug("Response POST: %s", answer)
+        logger.info("Response POST: %s", answer)
         return answer
 
     @with_retry(delay=10)
@@ -562,7 +562,7 @@ class EasyViewBase(ABC):
         )
         response.raise_for_status()
         answer = response.json()
-        logger.debug("Response GET: %s", answer)
+        logger.info("Response GET: %s", answer)
         return answer
 
     @property
@@ -572,7 +572,7 @@ class EasyViewBase(ABC):
             current_status = self._get_initial_status()
             if current_status is None:
                 raise ValueError("No active sensor found")
-            
+
             if self.resume_timestamp is None:
                 self._sensor_status = SensorStatus.from_timestamp(
                     current_status.timestamp - timedelta(hours=48),
@@ -590,7 +590,7 @@ class EasyViewBase(ABC):
     def sensor_status(self, value: SensorStatus):
         """Update sensor status"""
         if value.key == self.sensor_status.key:
-            logger.debug(
+            logger.info(
                 "status is current (sensor=%i, sequence=%i)",
                 value.sensor_id,
                 value.sequence,
@@ -604,7 +604,7 @@ class EasyViewBase(ABC):
             )
             raise ValueError("invalid sensor status")
         self._sensor_status = value
-        logger.debug(
+        logger.info(
             "sensor status updated (sensor=%i, sequence=%i)",
             self.sensor_status.sensor_id,
             self.sensor_status.sequence,
@@ -663,13 +663,13 @@ class EasyViewBase(ABC):
     def get_current_treatments(self) -> list[Treatment]:
         """Get current treatments from the last pump_status."""
         treatments = []
-        
+
         if self._pump_status is None:
-            logger.debug("No pump_status available for treatments")
+            logger.info("No pump_status available for treatments")
             return treatments
-        
+
         # Log raw pump_status treatment-relevant fields
-        logger.debug(
+        logger.info(
             "pump_status treatment data: "
             "bolusDeliveried=%.2f, bolusDeliveriedTime=%s, bolusType=%d, lastBolusType=%d, "
             "basalDeliveried=%.2f, basalDeliveriedTime=%s, basalType=%d, "
@@ -684,12 +684,12 @@ class EasyViewBase(ABC):
             self._pump_status.exercise_status,
             self._pump_status.exercise_duration,
         )
-        
+
         # Extract bolus if present and not already uploaded
         bolus = Treatment.from_pump_status_bolus(self._pump_status)
         if bolus:
             already_uploaded = bolus.key in self._uploaded_treatment_keys
-            logger.debug(
+            logger.info(
                 "Extracted bolus treatment: value=%.2f, time=%s, key=%s, already_uploaded=%s",
                 bolus.value,
                 bolus.datetime.isoformat(),
@@ -700,13 +700,13 @@ class EasyViewBase(ABC):
                 treatments.append(bolus)
                 self._uploaded_treatment_keys.add(bolus.key)
         else:
-            logger.debug("No bolus to extract (bolusDeliveried <= 0)")
-        
+            logger.info("No bolus to extract (bolusDeliveried <= 0)")
+
         # Extract exercise mode if active (only once per exercise session)
         exercise = Treatment.from_pump_status_exercise(self._pump_status)
         if exercise:
             already_uploaded = exercise.key in self._uploaded_treatment_keys
-            logger.debug(
+            logger.info(
                 "Extracted exercise treatment: duration=%.0f, remaining=%s, already_uploaded=%s",
                 exercise.value,
                 exercise.notes,
@@ -715,15 +715,15 @@ class EasyViewBase(ABC):
             if not already_uploaded:
                 treatments.append(exercise)
                 self._uploaded_treatment_keys.add(exercise.key)
-        
-        logger.debug("Total new treatments to upload: %d", len(treatments))
+
+        logger.info("Total new treatments to upload: %d", len(treatments))
         return treatments
 
     def get_treatments_from_download(self, start: datetime, end: datetime) -> list[Treatment]:
         """Get historical treatment data via download endpoint."""
         treatments = []
         target_user = self._get_target_username()
-        
+
         # Try fetching bolus data with flag "bo"
         try:
             bolus_params = {
@@ -733,7 +733,7 @@ class EasyViewBase(ABC):
                 "user_name": target_user,
             }
             bolus_data = self._get("download", bolus_params)
-            logger.debug("Bolus download response: %s", bolus_data)
+            logger.info("Bolus download response: %s", bolus_data)
             if "data" in bolus_data and bolus_data["data"]:
                 for rec in bolus_data["data"]:
                     try:
@@ -744,7 +744,7 @@ class EasyViewBase(ABC):
                     except (ValueError, IndexError) as e:
                         logger.warning("Failed to parse bolus record: %s", e)
         except Exception as e:
-            logger.debug("Bolus download not available or failed: %s", e)
+            logger.info("Bolus download not available or failed: %s", e)
 
         # Try fetching carbs data with flag "ca"
         try:
@@ -755,7 +755,7 @@ class EasyViewBase(ABC):
                 "user_name": target_user,
             }
             carbs_data = self._get("download", carbs_params)
-            logger.debug("Carbs download response: %s", carbs_data)
+            logger.info("Carbs download response: %s", carbs_data)
             if "data" in carbs_data and carbs_data["data"]:
                 for rec in carbs_data["data"]:
                     try:
@@ -766,7 +766,7 @@ class EasyViewBase(ABC):
                     except (ValueError, IndexError) as e:
                         logger.warning("Failed to parse carbs record: %s", e)
         except Exception as e:
-            logger.debug("Carbs download not available or failed: %s", e)
+            logger.info("Carbs download not available or failed: %s", e)
 
         treatments.sort(key=lambda t: t.timestamp)
         return treatments
@@ -775,11 +775,13 @@ class EasyViewBase(ABC):
 class EasyFollow(EasyViewBase):
     """Class that interacts with the EasyView API from a Follow account."""
 
+    _cached_uid: int | None = None
+
     @functools.cached_property
     def cgm_username(self) -> str:
         """Get the username of the user carrying the CGM."""
         status = self.get_status()
-        return status["monitorlist"][0]["username"]
+        return status["data"]["items"][0]["username"]
 
     def _get_target_username(self) -> str:
         """Get the username of the monitored CGM user."""
@@ -788,39 +790,40 @@ class EasyFollow(EasyViewBase):
     def open(self) -> None:
         """Establish a connection to EasyView."""
         data = {
-            "apptype": "Follow",
             "user_name": self.username,
             "password": self.password,
-            "platform": "google",
             "user_type": "P",
         }
-        self._post("login", data=data)
-        logger.info("logged in to EasyView as %s", self.username)
+        result = self._post("login", data=data)
+        self._cached_uid = result.get("uid")
+        logger.info("logged in to EasyView as %s (uid=%s)", self.username, self._cached_uid)
 
     def get_status(self) -> dict[str, Any]:
-        """Get CGM data from the EasyView API."""
-        logindata = self._get("logindata")
-        logger.debug("logindata %s", logindata)
-        return logindata
+        """Get CGM data from the EasyView API (v2.1 monitor/connections)."""
+        # Use v2.1 endpoint for monitor connections
+        connections = self._get("../v2.1/monitor/connections?per_page=9999")
+        logger.info("connections %s", connections)
+        return connections
 
     def _get_initial_status(self) -> SensorStatus | None:
         """Get the initial sensor status for initialization."""
         status = self.get_status()
         self._last_raw_status = status
-        
-        if len(status["monitorlist"]) != 1:
+
+        items = status.get("data", {}).get("items", [])
+        if len(items) != 1:
             logger.error(
                 "Follower should have exactly one CGM user, got %i",
-                len(status["monitorlist"]),
+                len(items),
             )
             raise ValueError("Account should follow exactly one CGM user.")
-        
-        monitor = status["monitorlist"][0]
-        
+
+        monitor = items[0]
+
         # Extract pump status if available
         if "pump_status" in monitor:
             self._pump_status = PumpStatus.from_easyview(monitor["pump_status"])
-            logger.debug(
+            logger.info(
                 "pump_status extracted: IOB=%.2f, lastBolus=%.2f at %s, "
                 "reservoir=%.2f, autoMode=%s, state=%d",
                 self._pump_status.iob,
@@ -830,7 +833,7 @@ class EasyFollow(EasyViewBase):
                 self._pump_status.auto_mode_enabled,
                 self._pump_status.state,
             )
-        
+
         if "sensor_status" not in monitor:
             return None
         return SensorStatus.from_easyview(monitor["sensor_status"])
@@ -839,33 +842,47 @@ class EasyFollow(EasyViewBase):
         """Fetch current sensor status from API."""
         raw_status = self.get_status()
         self._last_raw_status = raw_status
-        
-        if raw_status.get("res") == "ERR":
-            logger.error("Easyview API returned: %s.", raw_status.get("msg"))
+
+        if raw_status.get("error") != 0:
+            logger.error("Easyview API returned error: %s", raw_status)
             return None
-        
-        monitor = raw_status["monitorlist"][0]
-        
+
+        items = raw_status.get("data", {}).get("items", [])
+        if not items:
+            logger.warning("no monitored users found in EasyView account")
+            return None
+
+        monitor = items[0]
+
         # Update pump status
         if "pump_status" in monitor:
             self._pump_status = PumpStatus.from_easyview(monitor["pump_status"])
-        
+
         if "sensor_status" not in monitor:
             logger.warning("no active sensor found in EasyView account")
             return None
         return SensorStatus.from_easyview(monitor["sensor_status"])
 
     def get_downloads(self, start: datetime, end: datetime) -> dict[str, Any]:
-        """Get historical sensor status data from EasyView API."""
+        """Get historical sensor status data from EasyView API.
+        
+        Note: The v3 API may not support the download endpoint.
+        Returns empty data if endpoint is not available.
+        """
         params = {
             "flag": "sg",
             "st": (start + timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S"),
             "et": (end - timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S"),
             "user_name": self.cgm_username,
         }
-        download = self._get("download", params)
-        logger.debug("Download %s", download)
-        return download
+        try:
+            download = self._get("download", params)
+            logger.info("Download %s", download)
+            return download
+        except Exception as e:
+            # v3 API doesn't have download endpoint - return empty data
+            logger.warning("Download endpoint not available (v3 API): %s", e)
+            return {"data": []}
 
 
 class EasyCGM(EasyViewBase):
@@ -897,23 +914,23 @@ class EasyCGM(EasyViewBase):
         """Get the initial sensor status for initialization."""
         status = self.get_status()
         self._last_raw_status = status
-        
+
         if status.get("res") == "ERR":
             logger.error("EasyView API error: %s", status.get("msg"))
             return None
-        
+
         # Extract pump status if available
         if "pump_status" in status:
             self._pump_status = PumpStatus.from_easyview(status["pump_status"])
-        
+
         # CGM user account returns sensor_status directly (not in monitorlist)
         if "sensor_status" in status:
             return SensorStatus.from_easyview(status["sensor_status"])
-        
+
         # Fallback: check if data is in a different structure
         if "cgmdata" in status and "sensor_status" in status["cgmdata"]:
             return SensorStatus.from_easyview(status["cgmdata"]["sensor_status"])
-        
+
         logger.warning("No active sensor found in CGM user account")
         return None
 
@@ -921,37 +938,46 @@ class EasyCGM(EasyViewBase):
         """Fetch current sensor status from API."""
         raw_status = self.get_status()
         self._last_raw_status = raw_status
-        
+
         if raw_status.get("res") == "ERR":
             logger.error("Easyview API returned: %s.", raw_status.get("msg"))
             return None
-        
+
         # Update pump status
         if "pump_status" in raw_status:
             self._pump_status = PumpStatus.from_easyview(raw_status["pump_status"])
-        
+
         # CGM user account returns sensor_status directly
         if "sensor_status" in raw_status:
             return SensorStatus.from_easyview(raw_status["sensor_status"])
-        
+
         # Fallback: check alternative structure
         if "cgmdata" in raw_status and "sensor_status" in raw_status["cgmdata"]:
             return SensorStatus.from_easyview(raw_status["cgmdata"]["sensor_status"])
-        
+
         logger.warning("no active sensor found in EasyView CGM account")
         return None
 
     def get_downloads(self, start: datetime, end: datetime) -> dict[str, Any]:
-        """Get historical sensor status data from EasyView API."""
+        """Get historical sensor status data from EasyView API.
+        
+        Note: The v3 API may not support the download endpoint.
+        Returns empty data if endpoint is not available.
+        """
         params = {
             "flag": "sg",
             "st": (start + timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S"),
             "et": (end - timedelta(seconds=30)).strftime("%Y-%m-%d %H:%M:%S"),
             "user_name": self.username,
         }
-        download = self._get("download", params)
-        logger.debug("Download %s", download)
-        return download
+        try:
+            download = self._get("download", params)
+            logger.info("Download %s", download)
+            return download
+        except Exception as e:
+            # v3 API doesn't have download endpoint - return empty data
+            logger.warning("Download endpoint not available (v3 API): %s", e)
+            return {"data": []}
 
 
 class NightScout:
@@ -1030,11 +1056,11 @@ class NightScout:
     def add_treatment(self, treatment: Treatment) -> bool:
         """Add a treatment to Nightscout. Returns True if added."""
         ns_treatment = treatment.nightscout_treatment
-        logger.debug(
+        logger.info(
             "Uploading treatment to Nightscout: %s",
             ns_treatment,
         )
-        
+
         response = self.session.post(
             f"{self.url}/api/v1/treatments.json",
             json=[ns_treatment],
@@ -1078,14 +1104,14 @@ class NightScout:
                 },
             },
         }
-        
+
         # Add auto-mode info if enabled
         if pump_status.auto_mode_enabled:
             device_status["pump"]["auto_mode"] = {
                 "enabled": True,
                 "target": pump_status.auto_mode_sg_target,
             }
-        
+
         try:
             response = self.session.post(
                 f"{self.url}/api/v1/devicestatus.json",
@@ -1093,7 +1119,7 @@ class NightScout:
                 timeout=10,
             )
             response.raise_for_status()
-            logger.debug("updated pump status in nightscout (IOB=%.2f)", pump_status.iob)
+            logger.info("updated pump status in nightscout (IOB=%.2f)", pump_status.iob)
         except Exception as e:
             logger.warning("Failed to update pump status: %s", e)
 
@@ -1106,13 +1132,13 @@ def create_easyview_client(
 ) -> EasyViewBase:
     """
     Factory function to create the appropriate EasyView client.
-    
+
     Args:
         username: EasyView username
         password: EasyView password
         account_type: Either "follow" for follower accounts or "cgm" for CGM user accounts
         timestamp: Optional resume timestamp
-        
+
     Returns:
         EasyFollow or EasyCGM instance
     """
@@ -1143,11 +1169,11 @@ def main():
 
     with NightScout(ns_url, api_secret) as ns:
         client = create_easyview_client(username, password, account_type, ns.timestamp)
-        
+
         with client as ev:
             for sensor_status in ev:
                 ns.add(sensor_status)
-                
+
                 # Sync treatments from pump_status
                 if sync_treatments:
                     treatments = ev.get_current_treatments()
@@ -1155,7 +1181,7 @@ def main():
                         added = ns.add_treatments(treatments)
                         if added > 0:
                             logger.info("synced %i new treatments to nightscout", added)
-                
+
                 # Update pump status (IOB, reservoir, etc.)
                 if sync_pump_status and ev.pump_status:
                     ns.update_pump_status(ev.pump_status)
