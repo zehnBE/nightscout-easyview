@@ -17,6 +17,24 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Proxy nur fuer die Medtrum-EasyView-Anfragen (wie GLOBAL_AGENT_HTTPS_PROXY bei nightscout-connect).
+# Nightscout wird immer direkt angesprochen.
+PROXY_ENV_VARS = ("MEDTRUM_PROXY", "GLOBAL_AGENT_HTTPS_PROXY")
+
+
+def get_proxy_url() -> str | None:
+    """Return the proxy URL for EasyView requests from the environment, if any."""
+    for name in PROXY_ENV_VARS:
+        value = (os.getenv(name) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def mask_proxy(url: str) -> str:
+    """Hide credentials in a proxy URL for logging."""
+    return re.sub(r"//[^@/]*@", "//***@", url)
+
 
 @dataclass
 class SensorStatus:
@@ -494,6 +512,12 @@ class EasyViewBase(ABC):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/20100101 Firefox/143.0",
             }
         )
+        proxy = get_proxy_url()
+        if proxy:
+            # trust_env aus: sonst ueberschreiben HTTP(S)_PROXY aus der Umgebung session.proxies
+            self.session.trust_env = False
+            self.session.proxies.update({"http": proxy, "https": proxy})
+            logger.info("PROXY: EasyView requests via %s", mask_proxy(proxy))
         self.resume_timestamp = timestamp
         self._queue: list[SensorStatus] = []
         self._next_interval = datetime.now(timezone.utc)
@@ -985,6 +1009,8 @@ class NightScout:
 
     def __init__(self, url, api_secret):
         self.session = requests.Session()
+        # Nightscout immer direkt, auch wenn HTTP(S)_PROXY in der Umgebung steht
+        self.session.trust_env = False
         self.session.headers.update(
             {
                 "Content-Type": "application/json",

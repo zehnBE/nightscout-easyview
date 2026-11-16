@@ -10,7 +10,7 @@ WORKDIR /home/appuser/app
 COPY src/uploader.py .
 
 # Install dependencies
-RUN pip install --no-cache-dir requests pyyaml
+RUN pip install --no-cache-dir "requests[socks]" pyyaml
 
 # Make sure non-root user has access
 RUN chown -R appuser:appuser /home/appuser
