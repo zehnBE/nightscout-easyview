@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import functools
+import json
 import logging
 import os
 import re
@@ -922,20 +924,25 @@ class EasyCGM(EasyViewBase):
     def open(self) -> None:
         """Establish a connection to EasyView as CGM user."""
         data = {
-            "apptype": "User",
             "user_name": self.username,
             "password": self.password,
-            "platform": "google",
-            "user_type": "C",
+            "user_type": "P",
         }
         result = self._post("login", data=data)
-        if result.get("res") == "ERR":
-            raise ConnectionError(f"Login failed: {result.get('msg')}")
-        logger.info("logged in to EasyView as CGM user %s", self.username)
+        if result.get("error", 0) != 0 or not result.get("uid"):
+            raise ConnectionError(f"Login failed: {result}")
+        self._cgm_uid = result["uid"]
+        logger.info("logged in to EasyView as CGM user %s (uid=%s)", self.username, self._cgm_uid)
 
     def get_status(self) -> dict[str, Any]:
-        """Get CGM data from the EasyView API."""
-        return self._get("logindata")
+        """Get own CGM/pump status from the v3 API (v2.1/monitor/<uid>/status, like the web portal)."""
+        day = int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        param = base64.b64encode(json.dumps({"ts": [day, day + 86400], "tz": 0}).encode()).decode()
+        answer = self._get(f"../v2.1/monitor/{self._cgm_uid}/status", {"param": param})
+        if answer.get("error") != 0:
+            return {"res": "ERR", "msg": answer}
+        data = answer.get("data") or {}
+        return {"res": "OK", **data}
 
     def _get_initial_status(self) -> SensorStatus | None:
         """Get the initial sensor status for initialization."""
