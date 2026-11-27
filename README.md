@@ -6,6 +6,7 @@ This project provides a **Python-based uploader** that retrieves CGM data from t
 
 - Login to Medtrum EasyView
 - Fetch CGM readings from your Medtrum device
+- Fetch pump status from your Medtrum device
 - Upload data automatically to a Nightscout server
 - Simple configuration and extensible codebase
 
@@ -29,26 +30,31 @@ This project provides a **Python-based uploader** that retrieves CGM data from t
 ## Usage (Docker)
 
 1. Clone this repository
-2. Configure your credentials for Medtrum EasyView and Nightscout (see below) in `.env/secrets.yaml` on the Docker host.
+2. Configure your credentials for Medtrum EasyView and Nightscout in `docker-compose.yaml` on the Docker host.
 3. Create project:
 
     ```bash
     docker compose up --build -d 
     ```
 
-## Configuration
+## Configuration (docker-compose.yaml)
 
-Credentials are read from `secrets.yaml` in the location mentioned above. The file should have the following structure:
+Credentials are read from the Docker environment. The following variables are supported:
 
-```yaml
-easyview:
-    username: <e-mail for follower account>
-    password: <password of follower acount>
+Mandatory:
+| Variable | Description |
+| --- | --- |
+| username | Username of the follower account. Likely e-mail address |
+| password | Password of the follower acount |
+| url | URL of the NightScout instance, e.g. <https://host.domain> |
+| secret | NighScout Access Token (at least role "readable") |
 
-nightscout:
-    url: https:/your.nightscout.instance.here
-    secret: <your nightscout API secret>
-```
+Optional:
+| Variable | Default |
+| --- | --- |
+| account_type | auto |
+| sync_treatments | true |
+| sync_pump_status | true |
 
 ## Notes
 
