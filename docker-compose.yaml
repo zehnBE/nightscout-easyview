@@ -6,4 +6,12 @@ services:
     container_name: nightscout-easyview
     volumes:
       - .env:/home/appuser/.nightscout_easyview:ro
+    environment:
+      - username=<e-mail for follower account>
+      - password=<password of follower acount>
+      - url=<https://your.nightscout.instance.here>
+      - secret=<your nightscout API secret>
+      - account_type=auto
+      - sync_treatments=true
+      - sync_pump_status=true
     restart: unless-stopped
