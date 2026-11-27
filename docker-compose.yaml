@@ -4,8 +4,6 @@ services:
   uploader:
     build: .
     container_name: nightscout-easyview
-    volumes:
-      - .env:/home/appuser/.nightscout_easyview:ro
     environment:
       - username=<e-mail for follower account>
       - password=<password of follower acount>
